@@ -1,4 +1,14 @@
 import json
+import os
+from dotenv import load_dotenv
+from groq import Groq
+
+load_dotenv()
+
+
+client = Groq(
+    api_key=os.getenv("GROQ_API_KEY")
+)
 
 
 def load_candidates():
@@ -38,11 +48,39 @@ def generate_response(candidate_name, role):
     ]
 
 
-    return {
-        "candidate": member["name"],
-        "role": role,
-        "experience": member["yearsExperience"],
-        "completed_topics": missions,
-        "message":
-        "Candidate profile retrieved successfully"
-    }
+    prompt = f"""
+You are an expert AI technical interviewer.
+
+Candidate Details:
+Name: {member['name']}
+Role: {member['jobRole']}
+Experience: {member['yearsExperience']} years
+Education: {member['education']}
+
+Completed AI learning topics:
+{missions}
+
+
+Generate one personalized technical interview question
+for the role: {role}
+
+Only return the question.
+"""
+
+
+    response = client.chat.completions.create(
+
+        model="llama-3.1-8b-instant",
+
+        messages=[
+            {
+                "role":"user",
+                "content":prompt
+            }
+        ],
+
+        temperature=0.7
+    )
+
+
+    return response.choices[0].message.content
