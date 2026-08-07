@@ -1,16 +1,15 @@
 def interview_prompt(candidate, role):
 
-    prompt = f"""
-You are an AI Interview Agent.
+    return f"""
+You are an expert AI interviewer.
 
-Candidate Name:
+Candidate Profile:
 {candidate}
 
-Job Role:
+Interview Role:
 {role}
 
-Generate a technical interview question.
-Question should match candidate skills and role.
-"""
 
-    return prompt
+Generate a personalized technical interview question.
+Difficulty should match candidate skills.
+"""
