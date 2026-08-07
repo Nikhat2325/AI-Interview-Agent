@@ -4,14 +4,20 @@ class InterviewMemory:
         self.sessions = {}
 
     def create_session(self, candidate):
+
         self.sessions[candidate] = {
             "candidate": candidate,
             "questions": [],
-            "scores": [],
-            "feedback": []
+            "scores": []
         }
 
-    def add_result(self, candidate, question, answer, evaluation):
+    def add_result(
+        self,
+        candidate,
+        question,
+        answer,
+        evaluation
+    ):
 
         if candidate not in self.sessions:
             self.create_session(candidate)
@@ -23,10 +29,13 @@ class InterviewMemory:
         })
 
         if isinstance(evaluation, dict):
-            if "score" in evaluation:
-                self.sessions[candidate]["scores"].append(
-                    evaluation["score"]
-                )
+
+            score = evaluation.get("score")
+
+            if score is not None:
+                self.sessions[candidate]["scores"].append(score)
+
 
     def get_session(self, candidate):
+
         return self.sessions.get(candidate)

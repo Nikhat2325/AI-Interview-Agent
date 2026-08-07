@@ -29,6 +29,39 @@ def get_candidate(name):
 
     return None
 
+def load_curriculum():
+
+    with open("data/curriculum.json", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def get_relevant_curriculum(candidate):
+
+    curriculum = load_curriculum()
+
+    completed_topics = {
+        mission["title"].lower()
+        for mission in candidate["missions"]
+        if mission.get("passed") is True
+    }
+
+    relevant_days = []
+
+    for day in curriculum.get("days", []):
+
+        title = day.get("title", "").lower()
+
+        for topic in completed_topics:
+
+            # Topic ke important words check karna
+            topic_words = topic.split()
+
+            if any(word in title for word in topic_words if len(word) > 4):
+
+                relevant_days.append(day)
+                break
+
+    return relevant_days
 
 
 def generate_response(candidate_name, role):
@@ -38,50 +71,68 @@ def generate_response(candidate_name, role):
     if not candidate:
         return "Candidate not found"
 
-
     member = candidate["member"]
 
     missions = [
-        m["title"]
-        for m in candidate["missions"]
-        if m.get("passed")
+        mission["title"]
+        for mission in candidate["missions"]
+        if mission.get("passed") is True
     ]
 
+    relevant_curriculum = get_relevant_curriculum(candidate)
 
+    curriculum_context = [
+        {
+            "day": item.get("day"),
+            "title": item.get("title"),
+            "type": item.get("type"),
+            "tools": item.get("tools", []),
+            "objectives": item.get("objectives", [])
+        }
+        for item in relevant_curriculum
+    ]
     prompt = f"""
-You are an expert AI technical interviewer.
+You are an expert technical interviewer.
 
-Candidate Details:
+Candidate:
 Name: {member['name']}
-Role: {member['jobRole']}
+Target Role: {role}
 Experience: {member['yearsExperience']} years
 Education: {member['education']}
 
-Completed AI learning topics:
+Completed candidate topics:
 {missions}
 
+Relevant curriculum:
+{curriculum_context}
 
-Generate one personalized technical interview question
-for the role: {role}
+Generate ONE personalized technical interview question.
 
-Only return the question.
+STRICT RULES:
+1. The question must be based on the candidate's completed topics.
+2. Use curriculum only to determine technical depth.
+3. Do NOT copy the curriculum scenario literally.
+4. Do NOT mention healthcare, medical systems, or healthcare chatbots.
+5. Do NOT introduce unrelated domain-specific scenarios.
+6. Do NOT ask about persistent user accounts or long-term conversation history.
+7. Do NOT ask about voice interaction, authentication, or mobile applications.
+8. You may use generic software engineering scenarios.
+9. Match difficulty to the candidate's experience.
+10. Prefer practical engineering questions over definition-based questions.
+11. Return ONLY the question. Do not add introductions or explanations.
+
+Generate the question now.
 """
-
-
     response = client.chat.completions.create(
-
         model="llama-3.1-8b-instant",
-
         messages=[
             {
-                "role":"user",
-                "content":prompt
+                "role": "user",
+                "content": prompt
             }
         ],
-
-        temperature=0.7
+        temperature=0.5
     )
-
 
     return response.choices[0].message.content
 def evaluate_answer(question, answer):
