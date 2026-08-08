@@ -1,8 +1,10 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from app.ai import generate_response, evaluate_answer
+from app.ai import evaluate_answer
 from app.memory import InterviewMemory
+from app.agents import interview_orchestrator
+from app.ai import get_candidate, get_relevant_curriculum
 
 
 router = APIRouter()
@@ -10,10 +12,13 @@ router = APIRouter()
 memory = InterviewMemory()
 
 
-class InterviewRequest(BaseModel):
-    candidate:str
-    role:str
+# =========================
+# Request Models
+# =========================
 
+class InterviewRequest(BaseModel):
+    candidate: str
+    role: str
 
 
 class AnswerRequest(BaseModel):
@@ -22,18 +27,24 @@ class AnswerRequest(BaseModel):
     answer: str
 
 
-@router.post("/interview")
-def create_interview(data:InterviewRequest):
+# =========================
+# Start Interview
+# =========================
 
-    result = generate_response(
-        data.candidate,
-        data.role
+@router.post("/interview")
+def start_interview(request: InterviewRequest):
+
+    result = interview_orchestrator(
+        request.candidate,
+        request.role
     )
 
-    return {
-        "question":result
-    }
+    return result
 
+
+# =========================
+# Evaluate Answer
+# =========================
 
 @router.post("/evaluate")
 def evaluate(data: AnswerRequest):
@@ -52,6 +63,11 @@ def evaluate(data: AnswerRequest):
 
     return result
 
+
+# =========================
+# Get Interview Session
+# =========================
+
 @router.get("/session/{candidate}")
 def get_interview_session(candidate: str):
 
@@ -65,10 +81,12 @@ def get_interview_session(candidate: str):
     return session
 
 
+# =========================
+# Get Relevant Curriculum
+# =========================
+
 @router.get("/curriculum/{candidate}")
 def curriculum_for_candidate(candidate: str):
-
-    from app.ai import get_candidate, get_relevant_curriculum
 
     profile = get_candidate(candidate)
 
