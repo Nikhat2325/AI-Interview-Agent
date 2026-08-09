@@ -428,10 +428,32 @@ def interview(request: InterviewAPIRequest):
     # there is no important weakness.
     # -----------------------------------------------------
 
-    if ( stage in ["new-topic", "scenario", "system-design", "candidate-specific"] and understanding_level in ["good", "strong"] and not should_follow_up ):
-        next_topic = get_next_topic(
-            session
-        )
+    # if ( stage in ["new-topic", "scenario", "system-design", "candidate-specific"] and understanding_level in ["good", "strong"] and not should_follow_up ):
+    #     next_topic = get_next_topic(
+    #         session
+    #     )
+    print("========== TOPIC DEBUG ==========")
+    print("Stage:", stage)
+    print("Understanding:", understanding_level)
+    print("Should follow up:", should_follow_up)
+    print("Current topic:", session.get("current_topic"))
+    print("Topic index:", session.get("topic_index"))
+    print("Completed topics:", session.get("completed_topics"))
+    print("================================")
+
+    if (
+     stage in [
+        "new-topic",
+        "scenario",
+        "system-design",
+        "candidate-specific"
+    ]
+    and understanding_level in ["good", "strong"]
+    and not should_follow_up
+):
+     next_topic = get_next_topic(session)
+
+    print("NEXT TOPIC:", next_topic)
 
     # =====================================================
     # If moving to next topic
