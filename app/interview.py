@@ -1,4 +1,3 @@
-
 from fastapi import APIRouter
 from pydantic import BaseModel
 
@@ -11,6 +10,7 @@ from app.ai import (
 )
 
 router = APIRouter()
+
 
 # =========================================================
 # Interview Sessions
@@ -30,10 +30,11 @@ class InterviewAPIRequest(BaseModel):
 
 
 # =========================================================
-# Helper: Candidate Name
+# Candidate Name
 # =========================================================
 
 def get_candidate_name(candidate):
+
     if not candidate:
         return "Candidate"
 
@@ -50,10 +51,11 @@ def get_candidate_name(candidate):
 
 
 # =========================================================
-# Helper: Candidate Role
+# Candidate Role
 # =========================================================
 
 def get_candidate_role(candidate):
+
     if not candidate:
         return "Software Engineer"
 
@@ -82,7 +84,7 @@ def get_interview_stage(question_number):
         4: "deeper",
         5: "new-topic",
         6: "scenario",
-        7: "topic-3",
+        7: "new-topic",
         8: "system-design",
         9: "candidate-specific",
         10: "final"
@@ -90,8 +92,29 @@ def get_interview_stage(question_number):
 
     return stages.get(
         question_number,
-        "final"
+        "adaptive"
     )
+
+
+# =========================================================
+# Initial Difficulty Based on Attempts
+# =========================================================
+
+def get_initial_difficulty(attempts):
+
+    try:
+        attempts = int(attempts)
+    except (TypeError, ValueError):
+        attempts = 1
+
+    if attempts <= 1:
+        return "medium-hard"
+
+    elif attempts <= 3:
+        return "medium"
+
+    else:
+        return "basic"
 
 
 # =========================================================
@@ -112,10 +135,278 @@ def get_next_topic(session):
 
     next_index = current_index + 1
 
-    if next_index < len(completed_topics):
-        return completed_topics[next_index]
+    if next_index >= len(completed_topics):
+        return None
+
+    next_topic_data = completed_topics[next_index]
+
+    # New format
+    if isinstance(next_topic_data, dict):
+        return next_topic_data
+
+    # Safety for old format
+    if isinstance(next_topic_data, str):
+
+        return {
+            "title": next_topic_data,
+            "day": None,
+            "attempts": 1
+        }
 
     return None
+
+
+# =========================================================
+# Get Current Topic Data
+# =========================================================
+
+def get_topic_data(session):
+
+    topics = session.get(
+        "completed_topics",
+        []
+    )
+
+    index = session.get(
+        "topic_index",
+        0
+    )
+
+    if index >= len(topics):
+        return None
+
+    topic = topics[index]
+
+    if isinstance(topic, dict):
+        return topic
+
+    if isinstance(topic, str):
+
+        return {
+            "title": topic,
+            "day": None,
+            "attempts": 1
+        }
+
+    return None
+
+
+# =========================================================
+# Clean AI Generated Question
+# =========================================================
+
+def clean_question(question, fallback):
+
+    if not question:
+        question = fallback
+
+    question = str(question).strip()
+
+    prefixes = [
+        "Question:",
+        "Follow-up question:",
+        "Next question:"
+    ]
+
+    for prefix in prefixes:
+
+        if question.lower().startswith(
+            prefix.lower()
+        ):
+
+            question = question[
+                len(prefix):
+            ].strip()
+
+    question = question.replace(
+        "**",
+        ""
+    ).strip()
+
+    return question
+
+
+# =========================================================
+# Determine Understanding
+# =========================================================
+
+def get_understanding_level(evaluation):
+
+    if not isinstance(evaluation, dict):
+        return "basic"
+
+    level = evaluation.get(
+        "understanding_level",
+        "basic"
+    )
+
+    if level is None:
+        return "basic"
+
+    return str(level).lower().strip()
+
+
+# =========================================================
+# Should Move To Next Topic?
+# =========================================================
+
+def should_move_to_next_topic(
+    understanding_level,
+    topic_question_count
+):
+
+    # Strong / good answer
+    # -> immediately next topic
+
+    if understanding_level in [
+        "strong",
+        "good"
+    ]:
+
+        return True, "strong_answer"
+
+    # Maximum 2 questions per topic
+    # -> force next topic
+
+    if topic_question_count >= 2:
+
+        return True, "maximum_two_questions_reached"
+
+    # Weak / basic / partial
+    # -> one follow-up
+
+    return False, "follow_up_required"
+
+
+# =========================================================
+# Generate Question For New Topic
+# =========================================================
+
+def generate_new_topic_question(
+    session,
+    current_question,
+    candidate_answer,
+    evaluation,
+    next_topic_data
+):
+
+    topic = next_topic_data["title"]
+
+    attempts = next_topic_data.get(
+        "attempts",
+        1
+    )
+
+    difficulty = get_initial_difficulty(
+        attempts
+    )
+
+    question = generate_adaptive_question(
+
+        candidate_name=session[
+            "candidate_name"
+        ],
+
+        role=session[
+            "role"
+        ],
+
+        previous_question=current_question,
+
+        previous_answer=candidate_answer,
+
+        evaluation=evaluation,
+
+        current_topic=topic,
+
+        stage="new-topic",
+
+        asked_topics=session[
+            "asked_topics"
+        ],
+
+        next_topic=topic,
+
+        difficulty=difficulty
+    )
+
+    fallback = (
+        f"What is the main purpose of "
+        f"{topic}?"
+    )
+
+    return clean_question(
+        question,
+        fallback
+    )
+
+
+# =========================================================
+# Generate Follow-up Question
+# =========================================================
+
+def generate_followup_question(
+    session,
+    current_question,
+    candidate_answer,
+    evaluation,
+    current_topic,
+    understanding_level
+):
+
+    if understanding_level == "basic":
+
+        followup_stage = "follow-up"
+        difficulty = "basic"
+
+    elif understanding_level == "partial":
+
+        followup_stage = "deeper"
+        difficulty = "medium"
+
+    else:
+
+        followup_stage = "deeper"
+        difficulty = "medium"
+
+    question = generate_adaptive_question(
+
+        candidate_name=session[
+            "candidate_name"
+        ],
+
+        role=session[
+            "role"
+        ],
+
+        previous_question=current_question,
+
+        previous_answer=candidate_answer,
+
+        evaluation=evaluation,
+
+        current_topic=current_topic,
+
+        stage=followup_stage,
+
+        asked_topics=session[
+            "asked_topics"
+        ],
+
+        next_topic=None,
+
+        difficulty=difficulty
+    )
+
+    fallback = (
+        f"Can you explain the main concept "
+        f"of {current_topic} in your own words?"
+    )
+
+    return clean_question(
+        question,
+        fallback
+    )
 
 
 # =========================================================
@@ -126,6 +417,7 @@ def get_next_topic(session):
 def interview(request: InterviewAPIRequest):
 
     session_id = request.sessionId
+
 
     # =====================================================
     # START INTERVIEW
@@ -153,8 +445,9 @@ def interview(request: InterviewAPIRequest):
             candidate
         )
 
+
         # =================================================
-        # Get COMPLETE candidate profile
+        # Get Full Candidate
         # =================================================
 
         full_candidate = get_candidate(
@@ -168,32 +461,89 @@ def interview(request: InterviewAPIRequest):
                 "done": True
             }
 
+
         # =================================================
-        # Get completed curriculum topics
+        # Get Eligible Topics
+        #
+        # get_completed_topics() should already filter:
+        # passed == True
+        # skipped != True
         # =================================================
 
         completed_topics = get_completed_topics(
             full_candidate
         )
 
+        print(
+            "========== ELIGIBLE TOPICS =========="
+        )
+
+        print(
+            completed_topics
+        )
+
+        print(
+            "====================================="
+        )
+
+
         if not completed_topics:
 
             return {
                 "reply": (
-                    "No completed curriculum topics "
+                    "No eligible curriculum topics "
                     "found for this candidate."
                 ),
                 "done": True
             }
 
-        # =================================================
-        # First topic
-        # =================================================
-
-        current_topic = completed_topics[0]
 
         # =================================================
-        # Generate warm-up question
+        # FIRST TOPIC
+        # =================================================
+
+        first_topic_data = completed_topics[0]
+
+        first_topic = first_topic_data[
+            "title"
+        ]
+
+        first_attempts = first_topic_data.get(
+            "attempts",
+            1
+        )
+
+        first_difficulty = get_initial_difficulty(
+            first_attempts
+        )
+
+
+        print(
+            "========== FIRST TOPIC =========="
+        )
+
+        print(
+            "Topic:",
+            first_topic
+        )
+
+        print(
+            "Attempts:",
+            first_attempts
+        )
+
+        print(
+            "Initial difficulty:",
+            first_difficulty
+        )
+
+        print(
+            "================================="
+        )
+
+
+        # =================================================
+        # Generate First Question
         # =================================================
 
         first_question = generate_response(
@@ -202,15 +552,27 @@ def interview(request: InterviewAPIRequest):
 
             role=role,
 
-            topic=current_topic,
+            topic=first_topic,
 
             question_type="warmup",
 
-            asked_questions=[]
+            asked_questions=[],
+
+            difficulty=first_difficulty
         )
 
+
+        first_question = clean_question(
+            first_question,
+            (
+                f"What is the main purpose "
+                f"of {first_topic}?"
+            )
+        )
+
+
         # =================================================
-        # Create session
+        # Create Session
         # =================================================
 
         sessions[session_id] = {
@@ -223,14 +585,23 @@ def interview(request: InterviewAPIRequest):
 
             "role": role,
 
+            # Eligible curriculum topics
             "completed_topics": completed_topics,
 
-            "current_topic": current_topic,
+            # Current topic
+            "current_topic": first_topic,
 
+            "current_topic_attempts": first_attempts,
+
+            "current_topic_difficulty": first_difficulty,
+
+            # Topic position
             "topic_index": 0,
 
+            # Current question
             "current_question": first_question,
 
+            # Interview history
             "turns": [],
 
             "evaluations": [],
@@ -239,10 +610,15 @@ def interview(request: InterviewAPIRequest):
 
             "asked_questions": [],
 
+            # Questions asked on CURRENT topic
+            "topic_question_count": 0,
+
+            # Total answered questions
             "question_number": 1,
 
             "turn_count": 0
         }
+
 
         return {
 
@@ -252,33 +628,50 @@ def interview(request: InterviewAPIRequest):
 
             "questionNumber": 1,
 
-            "stage": "warm-up"
+            "stage": "warm-up",
+
+            "topic": first_topic
         }
+
 
     # =====================================================
     # EXISTING SESSION
     # =====================================================
 
-    session = sessions[session_id]
+    session = sessions[
+        session_id
+    ]
+
 
     # =====================================================
-    # If no message, return current question
+    # No Message
     # =====================================================
 
     if not request.message:
 
         return {
 
-            "reply": session["current_question"],
+            "reply": session[
+                "current_question"
+            ],
 
             "done": False,
 
-            "questionNumber": session["question_number"],
+            "questionNumber": session[
+                "question_number"
+            ],
 
             "stage": get_interview_stage(
-                session["question_number"]
+                session[
+                    "question_number"
+                ]
+            ),
+
+            "topic": session.get(
+                "current_topic"
             )
         }
+
 
     # =====================================================
     # Current Question
@@ -289,6 +682,11 @@ def interview(request: InterviewAPIRequest):
     ]
 
     candidate_answer = request.message
+
+    current_topic = session.get(
+        "current_topic"
+    )
+
 
     # =====================================================
     # Evaluate Answer
@@ -301,35 +699,55 @@ def interview(request: InterviewAPIRequest):
         candidate_answer
     )
 
+
     # =====================================================
-    # Save Asked Question
+    # Save Question
     # =====================================================
 
-    session["asked_questions"].append(
+    session[
+        "asked_questions"
+    ].append(
         current_question
     )
 
-    # =====================================================
-    # Save Current Topic
-    # =====================================================
 
-    current_topic = session.get(
-        "current_topic"
-    )
+    # =====================================================
+    # Save Topic
+    # =====================================================
 
     if current_topic:
 
-        if current_topic not in session["asked_topics"]:
+        if current_topic not in session[
+            "asked_topics"
+        ]:
 
-            session["asked_topics"].append(
+            session[
+                "asked_topics"
+            ].append(
                 current_topic
             )
+
+
+    # =====================================================
+    # Increment Topic Question Count
+    # =====================================================
+
+    session[
+        "topic_question_count"
+    ] += 1
+
+    topic_question_count = session[
+        "topic_question_count"
+    ]
+
 
     # =====================================================
     # Save Turn
     # =====================================================
 
-    session["turns"].append({
+    session[
+        "turns"
+    ].append({
 
         "question": current_question,
 
@@ -340,19 +758,32 @@ def interview(request: InterviewAPIRequest):
         "topic": current_topic
     })
 
-    session["evaluations"].append(
+
+    session[
+        "evaluations"
+    ].append(
         evaluation
     )
 
-    session["turn_count"] += 1
 
     # =====================================================
-    # Maximum Questions
+    # Increment Total Answered Questions
+    # =====================================================
+
+    session[
+        "turn_count"
+    ] += 1
+
+
+    # =====================================================
+    # MAX TOTAL QUESTIONS
     # =====================================================
 
     MAX_QUESTIONS = 10
 
-    if session["turn_count"] >= MAX_QUESTIONS:
+    if session[
+        "turn_count"
+    ] >= MAX_QUESTIONS:
 
         feedback = build_final_feedback(
             session
@@ -371,165 +802,308 @@ def interview(request: InterviewAPIRequest):
             ],
 
             "stage": "final",
-            "topic": session.get("current_topic")
+
+            "topic": current_topic
         }
 
+
     # =====================================================
-    # Next Question Number
+    # Evaluation Information
+    # =====================================================
+
+    understanding_level = (
+        get_understanding_level(
+            evaluation
+        )
+    )
+
+
+    # =====================================================
+    # Adaptive Decision
+    # =====================================================
+
+    move_to_next_topic, reason = (
+        should_move_to_next_topic(
+
+            understanding_level,
+
+            topic_question_count
+        )
+    )
+
+
+    print(
+        "========== ADAPTIVE DECISION =========="
+    )
+
+    print(
+        "Current topic:",
+        current_topic
+    )
+
+    print(
+        "Topic question count:",
+        topic_question_count
+    )
+
+    print(
+        "Understanding:",
+        understanding_level
+    )
+
+    print(
+        "Move to next topic:",
+        move_to_next_topic
+    )
+
+    print(
+        "Reason:",
+        reason
+    )
+
+    print(
+        "Topic index:",
+        session[
+            "topic_index"
+        ]
+    )
+
+    print(
+        "======================================="
+    )
+
+
+    # =====================================================
+    # NEXT TOPIC
+    # =====================================================
+
+    if move_to_next_topic:
+
+        next_topic_data = get_next_topic(
+            session
+        )
+
+
+        print(
+            "NEXT TOPIC DATA:",
+            next_topic_data
+        )
+
+
+        # =================================================
+        # No More Topics
+        # =================================================
+
+        if next_topic_data is None:
+
+            feedback = build_final_feedback(
+                session
+            )
+
+            return {
+
+                "reply": "Interview completed.",
+
+                "done": True,
+
+                "feedback": feedback,
+
+                "questionNumber": session[
+                    "question_number"
+                ],
+
+                "stage": "final",
+
+                "topic": current_topic
+            }
+
+
+        # =================================================
+        # Move Topic Index
+        # =================================================
+
+        session[
+            "topic_index"
+        ] += 1
+
+
+        # =================================================
+        # New Topic Data
+        # =================================================
+
+        next_topic = next_topic_data[
+            "title"
+        ]
+
+        next_attempts = next_topic_data.get(
+            "attempts",
+            1
+        )
+
+        next_difficulty = (
+            get_initial_difficulty(
+                next_attempts
+            )
+        )
+
+
+        # =================================================
+        # Update Session
+        # =================================================
+
+        session[
+            "current_topic"
+        ] = next_topic
+
+        session[
+            "current_topic_attempts"
+        ] = next_attempts
+
+        session[
+            "current_topic_difficulty"
+        ] = next_difficulty
+
+
+        # =================================================
+        # RESET CURRENT TOPIC COUNT
+        #
+        # Very important!
+        # =================================================
+
+        session[
+            "topic_question_count"
+        ] = 0
+
+
+        # =================================================
+        # Next Question Number
+        # =================================================
+
+        next_question_number = (
+            session[
+                "question_number"
+            ] + 1
+        )
+
+        session[
+            "question_number"
+        ] = next_question_number
+
+
+        # =================================================
+        # Generate New Topic Question
+        # =================================================
+
+        next_question = (
+            generate_new_topic_question(
+
+                session=session,
+
+                current_question=current_question,
+
+                candidate_answer=candidate_answer,
+
+                evaluation=evaluation,
+
+                next_topic_data=next_topic_data
+            )
+        )
+
+
+        # =================================================
+        # Save New Question
+        # =================================================
+
+        session[
+            "current_question"
+        ] = next_question
+
+
+        # =================================================
+        # Response
+        # =================================================
+
+        return {
+
+            "reply": next_question,
+
+            "done": False,
+
+            "questionNumber": (
+                next_question_number
+            ),
+
+            "stage": "new-topic",
+
+            "topic": next_topic
+        }
+
+
+    # =====================================================
+    # FOLLOW-UP
+    #
+    # Candidate was not strong.
+    # This can only happen after Question 1 of topic,
+    # because Question 2 forces topic transition.
     # =====================================================
 
     next_question_number = (
-        session["question_number"] + 1
+        session[
+            "question_number"
+        ] + 1
     )
 
-    session["question_number"] = (
-        next_question_number
-    )
+    session[
+        "question_number"
+    ] = next_question_number
+
 
     # =====================================================
-    # Determine Stage
+    # Follow-up Stage
     # =====================================================
 
-    stage = get_interview_stage(
-        next_question_number
-    )
+    if understanding_level in [
+        "weak",
+        "basic"
+    ]:
+
+        followup_stage = "follow-up"
+
+    else:
+
+        followup_stage = "deeper"
+
 
     # =====================================================
-    # Decide whether to move to next topic
+    # Generate Follow-up
     # =====================================================
 
-    understanding_level = "basic"
+    next_question = (
+        generate_followup_question(
 
-    should_follow_up = True
+            session=session,
 
-    if isinstance(evaluation, dict):
+            current_question=current_question,
 
-        understanding_level = evaluation.get(
-            "understanding_level",
-            "basic"
+            candidate_answer=candidate_answer,
+
+            evaluation=evaluation,
+
+            current_topic=current_topic,
+
+            understanding_level=understanding_level
         )
-
-        should_follow_up = evaluation.get(
-            "should_follow_up",
-            True
-        )
-
-    next_topic = None
-    
-
-    # -----------------------------------------------------
-    # If candidate is strong and this is a new-topic stage,
-    # move to next curriculum topic.
-    # -----------------------------------------------------
-    
-    
-    # -----------------------------------------------------
-    # Also move to next topic at new-topic stage when
-    # there is no important weakness.
-    # -----------------------------------------------------
-
-    # if ( stage in ["new-topic", "scenario", "system-design", "candidate-specific"] and understanding_level in ["good", "strong"] and not should_follow_up ):
-    #     next_topic = get_next_topic(
-    #         session
-    #     )
-    print("========== TOPIC DEBUG ==========")
-    print("Stage:", stage)
-    print("Understanding:", understanding_level)
-    print("Should follow up:", should_follow_up)
-    print("Current topic:", session.get("current_topic"))
-    print("Topic index:", session.get("topic_index"))
-    print("Completed topics:", session.get("completed_topics"))
-    print("================================")
-
-    if (
-     stage in [
-        "new-topic",
-        "scenario",
-        "system-design",
-        "candidate-specific"
-    ]
-    and understanding_level in ["good", "strong"]
-    and not should_follow_up
-):
-     next_topic = get_next_topic(session)
-
-    print("NEXT TOPIC:", next_topic)
-
-    # =====================================================
-    # If moving to next topic
-    # =====================================================
-
-    if next_topic:
-
-        session["topic_index"] += 1
-
-        session["current_topic"] = (
-            next_topic
-        )
-
-        current_topic = next_topic
-
-    # =====================================================
-    # Generate Adaptive Question
-    # =====================================================
-
-    next_question = generate_adaptive_question(
-
-        candidate_name=session[
-            "candidate_name"
-        ],
-
-        role=session[
-            "role"
-        ],
-
-        previous_question=current_question,
-
-        previous_answer=candidate_answer,
-
-        evaluation=evaluation,
-
-        current_topic=session[
-            "current_topic"
-        ],
-
-        stage=stage,
-
-        asked_topics=session[
-            "asked_topics"
-        ],
-
-        next_topic=next_topic
     )
-    
-    
-    # ===================================================== # CLEAN AI RESPONSE # ===================================================== 
-    if not next_question: 
-        next_question = ( 
-                         "Can you explain the main concept "
-                         "of this topic in your own words?" 
-                         ) 
-    # Remove accidental prefixes 
-    next_question = next_question.strip()
-    if next_question.startswith("Question:"): 
-        next_question = next_question[
-            len("Question:"): ].strip() 
-        
-    if next_question.startswith( 
-                                "Follow-up question:"
-                                ): 
-        next_question = next_question[
-            len("Follow-up question:"): ].strip() 
-    next_question = next_question.replace( "**",
-                "" ).strip()
+
 
     # =====================================================
-    # Save New Question
+    # Save Follow-up
     # =====================================================
 
-    session["current_question"] = (
-        next_question
-    )
+    session[
+        "current_question"
+    ] = next_question
+
 
     # =====================================================
     # Response
@@ -541,13 +1115,13 @@ def interview(request: InterviewAPIRequest):
 
         "done": False,
 
-        "questionNumber": next_question_number,
+        "questionNumber": (
+            next_question_number
+        ),
 
-        "stage": stage,
+        "stage": followup_stage,
 
-        "topic": session[
-            "current_topic"
-        ]
+        "topic": current_topic
     }
 
 
@@ -567,6 +1141,7 @@ def build_final_feedback(session):
 
     next_steps = []
 
+
     # =====================================================
     # Analyze Evaluations
     # =====================================================
@@ -579,8 +1154,9 @@ def build_final_feedback(session):
         ):
             continue
 
+
         # =================================================
-        # Strength
+        # Score
         # =================================================
 
         score = evaluation.get(
@@ -588,18 +1164,25 @@ def build_final_feedback(session):
             0
         )
 
-        if score >= 8:
 
-            strengths.append(
-                "Demonstrated strong technical understanding."
-            )
+        if isinstance(
+            score,
+            (int, float)
+        ):
 
-        elif score >= 6:
+            if score >= 8:
 
-            strengths.append(
-                "Demonstrated reasonable understanding "
-                "of technical concepts."
-            )
+                strengths.append(
+                    "Demonstrated strong technical understanding."
+                )
+
+            elif score >= 6:
+
+                strengths.append(
+                    "Demonstrated reasonable understanding "
+                    "of technical concepts."
+                )
+
 
         # =================================================
         # Missing Points
@@ -610,11 +1193,17 @@ def build_final_feedback(session):
             []
         )
 
-        for point in missing_points:
+        if isinstance(
+            missing_points,
+            list
+        ):
 
-            if point not in gaps:
+            for point in missing_points:
 
-                gaps.append(point)
+                if point not in gaps:
+
+                    gaps.append(point)
+
 
         # =================================================
         # Improvement Feedback
@@ -625,14 +1214,20 @@ def build_final_feedback(session):
             []
         )
 
-        for item in improvements:
+        if isinstance(
+            improvements,
+            list
+        ):
 
-            if item not in next_steps:
+            for item in improvements:
 
-                next_steps.append(item)
+                if item not in next_steps:
+
+                    next_steps.append(item)
+
 
     # =====================================================
-    # Default Strength
+    # Defaults
     # =====================================================
 
     if not strengths:
@@ -642,9 +1237,6 @@ def build_final_feedback(session):
             "technical concepts."
         )
 
-    # =====================================================
-    # Default Gaps
-    # =====================================================
 
     if not gaps:
 
@@ -653,9 +1245,6 @@ def build_final_feedback(session):
             "explanations."
         )
 
-    # =====================================================
-    # Default Next Steps
-    # =====================================================
 
     if not next_steps:
 
@@ -664,23 +1253,31 @@ def build_final_feedback(session):
             "with practical examples."
         )
 
+
     # =====================================================
     # Average Score
     # =====================================================
 
     scores = [
 
-        e.get("score", 0)
+        e.get(
+            "score",
+            0
+        )
 
         for e in evaluations
 
-        if isinstance(e, dict)
+        if isinstance(
+            e,
+            dict
+        )
 
         and isinstance(
             e.get("score"),
             (int, float)
         )
     ]
+
 
     if scores:
 
@@ -692,6 +1289,7 @@ def build_final_feedback(session):
     else:
 
         average_score = 0
+
 
     # =====================================================
     # Final Feedback

@@ -49,71 +49,128 @@ def load_curriculum():
 
 
 def get_completed_topics(candidate):
-    """
-    Candidate ke successfully completed curriculum topics
-    return karta hai.
-    """
 
-    return [
-        mission["title"]
-        for mission in candidate.get("missions", [])
-        if mission.get("passed") is True
-    ]
+    completed_topics = []
 
+    for mission in candidate.get("missions", []):
+
+        # Explicitly skipped topics are excluded
+        if mission.get("skipped") is True:
+            continue
+
+        # Only passed topics are eligible
+        if mission.get("passed") is not True:
+            continue
+
+        title = mission.get("title")
+
+        if not title:
+            continue
+
+        completed_topics.append({
+            "title": title,
+            "day": mission.get("day"),
+            "attempts": mission.get("attempts", 1)
+        })
+
+    return completed_topics
 
 def get_relevant_curriculum(candidate):
     """
-    Candidate ke completed topics ke corresponding
-    curriculum days return karta hai.
+    Candidate ke eligible missions ke exact curriculum days
+    return karta hai.
 
-    IMPORTANT:
-    Curriculum ka original order preserve kiya gaya hai.
+    Matching day number ke basis par hoti hai.
+    Isliye related/fuzzy topics accidentally include nahi honge.
+
+    Candidate ke eligible topics:
+    - passed == True
+    - skipped != True
     """
+
+    # =====================================================
+    # Load complete curriculum
+    # =====================================================
 
     curriculum = load_curriculum()
 
-    completed_topics = {
-        topic.lower().strip()
-        for topic in get_completed_topics(candidate)
-    }
+    # =====================================================
+    # Get candidate's eligible topics
+    # =====================================================
+
+    candidate_topics = get_completed_topics(candidate)
+
+    # =====================================================
+    # Extract exact curriculum day numbers
+    # =====================================================
+
+    eligible_days = set()
+
+    for topic in candidate_topics:
+
+        if not isinstance(topic, dict):
+            continue
+
+        day = topic.get("day")
+
+        if day is not None:
+            eligible_days.add(day)
+
+    # =====================================================
+    # Debug: Candidate eligible days
+    # =====================================================
+
+    print(
+        "========== ELIGIBLE CURRICULUM DAYS =========="
+    )
+
+    print(
+        eligible_days
+    )
+
+    print(
+        "==============================================="
+    )
+
+    # =====================================================
+    # Match candidate days with curriculum
+    # =====================================================
 
     relevant_days = []
 
-    for day in curriculum.get("days", []):
+    for curriculum_day in curriculum.get(
+        "days",
+        []
+    ):
 
-        title = day.get("title", "").lower().strip()
+        curriculum_day_number = curriculum_day.get(
+            "day"
+        )
 
-        # Exact / strong title matching first
-        matched = False
+        if curriculum_day_number in eligible_days:
 
-        for topic in completed_topics:
+            relevant_days.append(
+                curriculum_day
+            )
 
-            if topic == title:
-                matched = True
-                break
+    # =====================================================
+    # Debug: Relevant curriculum
+    # =====================================================
 
-            # Topic ke meaningful words
-            topic_words = [
-                word
-                for word in topic.split()
-                if len(word) > 4
-            ]
+    print(
+        "========== RELEVANT CURRICULUM =========="
+    )
 
-            if topic_words:
+    for day in relevant_days:
 
-                match_count = sum(
-                    1
-                    for word in topic_words
-                    if word in title
-                )
+        print(
+            f"Day {day.get('day')}: "
+            f"{day.get('title')}"
+        )
 
-                # At least half meaningful words match
-                if match_count >= max(1, len(topic_words) // 2):
-                    matched = True
-                    break
-
-        if matched:
-            relevant_days.append(day)
+    print(
+        "=========================================="
+    )
 
     return relevant_days
 
@@ -149,7 +206,8 @@ def generate_response(
     role,
     topic,
     question_type="warmup",
-    asked_questions=None
+    asked_questions=None,
+    difficulty="medium"
 ):
     candidate = get_candidate(candidate_name)
 
@@ -177,6 +235,9 @@ QUESTION TYPE:
 
 ALREADY ASKED QUESTIONS:
 {asked_questions}
+QUESTION DIFFICULTY:
+
+{difficulty}
 
 Generate exactly ONE interview question.
 
@@ -298,6 +359,26 @@ Do not invent missing concepts that are not necessary
 for answering the question.
 
 Evaluate only what the question actually asked.
+IMPORTANT:
+
+Only include a gap if the candidate missed a concept that was
+necessary to correctly answer the specific question.
+
+Do NOT include:
+- optional examples
+- library names
+- product names
+- alternative technologies
+- advanced concepts
+- implementation details not asked
+- terminology differences when the candidate explained the
+  concept correctly in different words
+
+If a point is "not crucial", "optional", or "nice to have",
+DO NOT include it in gaps or next steps.
+
+Every gap MUST be directly supported by the original question
+and the candidate's answer.
 
 Focus on:
 - correctness
@@ -305,6 +386,64 @@ Focus on:
 - reasoning
 - practical understanding
 - engineering judgment
+
+STRICT GAP RULE:
+
+A missing point is valid ONLY if ALL of the following are true:
+
+1. The concept is directly required by the question.
+2. The candidate's answer clearly fails to address that concept.
+3. The concept is necessary for a correct or strong answer.
+4. The concept can be supported directly by the wording of the question.
+
+If any of these conditions are not satisfied, DO NOT include the point.
+
+Never create a gap merely because:
+- the candidate could have added more detail
+- the candidate did not use a specific technical term
+- another related concept exists
+- an advanced implementation detail was omitted
+- an optional example was omitted
+- a library, product, database, algorithm, or technology was not mentioned
+- the answer could theoretically be more comprehensive
+
+IMPORTANT:
+Evaluate the answer against the QUESTION, not against a general knowledge checklist.
+
+Do not use external knowledge to create additional requirements.
+
+For example:
+
+Question:
+"What is the primary function of a vector database in NLP?"
+
+Good answer:
+"A vector database stores embeddings and performs similarity search to retrieve semantically similar information."
+
+This should NOT receive gaps such as:
+- "Did not mention HNSW."
+- "Did not mention cosine similarity."
+- "Did not mention Pinecone."
+- "Did not mention indexing strategies."
+- "Did not mention reranking."
+
+Those are optional implementation details unless explicitly asked.
+
+Another example:
+
+Question:
+"What is the primary difference between zero-shot and few-shot prompting?"
+
+Good answer:
+"Zero-shot uses instructions without examples, while few-shot provides examples."
+
+This should NOT receive gaps such as:
+- "Did not discuss token cost."
+- "Did not discuss model architecture."
+- "Did not discuss temperature."
+- "Did not discuss performance trade-offs."
+
+unless the question explicitly asks about those topics.
 """
 
     response = client.chat.completions.create(
@@ -354,7 +493,8 @@ def generate_adaptive_question(
     current_topic,
     stage,
     asked_topics=None,
-    next_topic=None
+    next_topic=None,
+    difficulty="medium"
 ):
     """
     Generates exactly ONE next interview question.
@@ -739,6 +879,14 @@ THIS IS A STRICT RULE.
 The question MUST be about:
 
 {question_topic}
+
+==================================================
+QUESTION DIFFICULTY
+==================================================
+
+{difficulty}
+
+Use this difficulty when generating the question.
 
 You MUST NOT choose the topic yourself.
 

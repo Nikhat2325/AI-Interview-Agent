@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>AI Interview Agent</title>
+
+    <link
+        rel="stylesheet"
+        href="/frontend/style.css"
+    >
+
+</head>
+
+
+<body>
+
+
+<!-- ================================================= -->
+<!-- START SCREEN -->
+<!-- ================================================= -->
+
+<section
+    id="startScreen"
+    class="screen"
+>
+
+    <div class="start-card">
+
+        <div class="logo">
+            AI
+        </div>
+
+
+        <h1>
+            AI Interview Agent
+        </h1>
+
+
+        <p class="subtitle">
+            Adaptive technical interview powered by AI
+        </p>
+
+
+        <!-- Candidate ID -->
+
+        <div class="input-group">
+
+            <label for="candidateId">
+                Candidate ID
+            </label>
+
+            <input
+                type="text"
+                id="candidateId"
+                placeholder="e.g. CAND-001"
+            >
+
+        </div>
+
+
+        <!-- Candidate Name -->
+
+        <div class="input-group">
+
+            <label for="candidateName">
+                Candidate Name
+            </label>
+
+            <input
+                type="text"
+                id="candidateName"
+                placeholder="Enter your name"
+            >
+
+        </div>
+
+
+        <button
+            id="startBtn"
+            class="primary-btn"
+        >
+            Start Interview
+        </button>
+
+
+        <p
+            id="startError"
+            class="error"
+        ></p>
+
+    </div>
+
+</section>
+
+
+
+<!-- ================================================= -->
+<!-- INTERVIEW SCREEN -->
+<!-- ================================================= -->
+
+<section
+    id="interviewScreen"
+    class="screen hidden"
+>
+
+    <div class="app-container">
+
+
+        <!-- ================= HEADER ================= -->
+
+        <header class="topbar">
+
+            <div>
+
+                <div class="brand">
+                    AI Interview Agent
+                </div>
+
+
+                <div
+                    id="candidateDisplay"
+                    class="candidate-name"
+                >
+                    Candidate
+                </div>
+
+            </div>
+
+
+            <div class="status">
+
+                <span class="status-dot"></span>
+
+                <span>
+                    Interview in progress
+                </span>
+
+            </div>
+
+        </header>
+
+
+
+        <!-- ================= PROGRESS ================= -->
+
+        <div class="progress-container">
+
+            <div class="progress-info">
+
+                <span>
+                    Interview Progress
+                </span>
+
+
+                <span id="questionCounter">
+                    Question 0
+                </span>
+
+            </div>
+
+
+            <div class="progress-bar">
+
+                <div
+                    id="progressFill"
+                    class="progress-fill"
+                ></div>
+
+            </div>
+
+        </div>
+
+
+
+        <!-- ================= CURRENT TOPIC ================= -->
+
+        <div class="topic-card">
+
+            <div class="topic-label">
+                CURRENT TOPIC
+            </div>
+
+
+            <div
+                id="topicName"
+                class="topic-name"
+            >
+                Preparing interview...
+            </div>
+
+        </div>
+
+
+
+        <!-- ================= CURRENT QUESTION ================= -->
+
+        <main
+            id="questionContainer"
+            class="chat-container"
+        >
+
+            <div class="question-card">
+
+                <div class="message-sender">
+                    AI Interviewer
+                </div>
+
+
+                <div
+                    id="questionText"
+                    class="message-text"
+                >
+                    Preparing your first question...
+                </div>
+
+            </div>
+
+        </main>
+
+
+
+        <!-- ================= ANSWER AREA ================= -->
+
+        <div class="answer-area">
+
+            <textarea
+                id="answerInput"
+                placeholder="Type your answer here..."
+                rows="4"
+            ></textarea>
+
+
+            <div class="answer-footer">
+
+                <span class="hint">
+                    Press Ctrl + Enter to submit
+                </span>
+
+
+                <button
+                    id="sendBtn"
+                    class="send-btn"
+                >
+                    Submit Answer
+                </button>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</section>
+
+
+
+<!-- ================================================= -->
+<!-- FEEDBACK SCREEN -->
+<!-- ================================================= -->
+
+<section
+    id="feedbackScreen"
+    class="screen hidden"
+>
+
+    <div class="feedback-card">
+
+
+        <div class="success-icon">
+            ✓
+        </div>
+
+
+        <h1>
+            Interview Completed
+        </h1>
+
+
+        <p class="feedback-subtitle">
+            Here is your AI-generated interview feedback.
+        </p>
+
+
+
+        <!-- SCORE -->
+
+        <div class="score-card">
+
+            <div class="score-label">
+                Average Technical Score
+            </div>
+
+
+            <div
+                id="averageScore"
+                class="score"
+            >
+                0.0
+            </div>
+
+
+            <div class="score-out-of">
+                / 10
+            </div>
+
+        </div>
+
+
+
+        <!-- SUMMARY -->
+
+        <div class="feedback-section">
+
+            <h3>
+                Summary
+            </h3>
+
+
+            <p id="summary"></p>
+
+        </div>
+
+
+
+        <!-- STRENGTHS -->
+
+        <div class="feedback-section">
+
+            <h3>
+                Strengths
+            </h3>
+
+
+            <ul id="strengthsList"></ul>
+
+        </div>
+
+
+
+        <!-- GAPS -->
+
+        <div class="feedback-section">
+
+            <h3>
+                Areas to Improve
+            </h3>
+
+
+            <ul id="gapsList"></ul>
+
+        </div>
+
+
+
+        <!-- NEXT STEPS -->
+
+        <div class="feedback-section">
+
+            <h3>
+                Next Steps
+            </h3>
+
+
+            <ul id="nextList"></ul>
+
+        </div>
+
+
+
+        <button
+            id="restartBtn"
+            class="primary-btn"
+        >
+            Start New Interview
+        </button>
+
+    </div>
+
+</section>
+
+
+
+<script
+    src="/frontend/script.js"
+></script>
+
+
+</body>
+
+</html>
